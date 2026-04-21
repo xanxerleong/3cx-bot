@@ -1,121 +1,123 @@
-const puppeteer = require('puppeteer');
+// 🔥 載入套件
 const express = require('express');
+const puppeteer = require('puppeteer');
+
 const app = express();
 
+// 🌐 首頁（測試用，避免 Cannot GET /）
+app.get('/', (req, res) => {
+  res.send('✅ 3CX Bot is running');
+});
+
+// 🚀 主功能：抓 3CX 資料
 app.get('/run', async (req, res) => {
-  console.log("🔥🔥🔥 正在執行最終版本");
+  console.log('🔥 開始執行 3CX');
 
   const browser = await puppeteer.launch({
-    headless: false, // 成功後可改 true
-    defaultViewport: null
+    headless: true, // Render 必須 true
+    args: ['--no-sandbox', '--disable-setuid-sandbox'] // Render 必備
   });
 
   const page = await browser.newPage();
 
   try {
-    // =============================
+    // =========================
     // 1️⃣ 登入 3CX
-    // =============================
+    // =========================
     await page.goto('https://kkco-asiayo.3cx.com.tw:5271', {
       waitUntil: 'networkidle2'
     });
 
+    // 👉 等 input 出現
     await page.waitForSelector('input');
 
     const inputs = await page.$$('input');
 
-    if (inputs.length < 2) {
-      throw new Error('❌ 找不到登入欄位');
-    }
-
+    // 👉 輸入帳號密碼
     await inputs[0].type('3012', { delay: 50 });
-    await inputs[1].type('Xanxer910822@', { delay: 50 }); // 🔴請改成你的密碼
+    await inputs[1].type('Xanxer910822@', { delay: 50 });
 
-    await page.click('button');
+    // 👉 按登入
+    await page.keyboard.press('Enter');
 
-    await page.waitForNavigation({ waitUntil: 'networkidle2' });
+    // 👉 等頁面載入
+    await new Promise(r => setTimeout(r, 5000));
 
     console.log('✅ 登入成功');
 
-    // =============================
-    // 2️⃣ 分機列表
-    // =============================
+    // =========================
+    // 2️⃣ 定義三個分機
+    // =========================
     const queues = [
       { ext: '0300', url: 'https://kkco-asiayo.3cx.com.tw:5271/#/switchboard/queues/106' },
       { ext: '0301', url: 'https://kkco-asiayo.3cx.com.tw:5271/#/switchboard/queues/107' },
-      { ext: '0302', url: 'https://kkco-asiayo.3cx.com.tw:5271/#/switchboard/queues/108' }
+      { ext: '0302', url: 'https://kkco-asiayo.3cx.com.tw:5271/#/switchboard/queues/108' },
+      { ext: '0310', url: 'https://kkco-asiayo.3cx.com.tw:5271/#/switchboard/queues/109' },
+      { ext: '0700', url: 'https://kkco-asiayo.3cx.com.tw:5271/#/switchboard/queues/160' }
     ];
 
-    let result = [];
+    const results = [];
 
-    // =============================
-    // 3️⃣ 抓資料
-    // =============================
+    // =========================
+    // 3️⃣ 逐個抓資料
+    // =========================
     for (let q of queues) {
-      console.log('👉 抓分機', q.ext);
+      console.log('👉 進入分機:', q.ext);
 
-      await page.goto(q.url);
+      await page.goto(q.url, { waitUntil: 'networkidle2' });
 
-      // 等畫面出現關鍵字
-      await page.waitForFunction(() => {
-        return document.body.innerText.includes('Serviced Calls');
-      }, { timeout: 15000 });
+      // 👉 等資料出現
+      await new Promise(r => setTimeout(r, 5000));
 
-      // 再等一下確保數字載入
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      // 👉 抓整頁文字
+      const text = await page.evaluate(() => document.body.innerText);
 
-      const data = await page.evaluate(() => {
+      // =========================
+      // 4️⃣ 解析數字（重點）
+      // =========================
+      // 範例：
+      // Waiting Calls 0
+      // Serviced Calls 37
+      // Abandoned Calls 1
+      // Average Waiting 00:00:21
 
-        const text = document.body.innerText;
-        const lines = text.split('\n');
+      function getValue(label) {
+        const regex = new RegExp(label + '\\s+(\\d+|\\d{2}:\\d{2}:\\d{2})');
+        const match = text.match(regex);
+        return match ? match[1] : '0';
+      }
 
-        const headerIndex = lines.findIndex(line =>
-          line.includes('Waiting Calls') &&
-          line.includes('Serviced Calls')
-        );
+      const serviced = getValue('Serviced Calls');
+      const abandoned = getValue('Abandoned Calls');
+      const waiting = getValue('Average Waiting');
 
-        if (headerIndex === -1) {
-          return { serviced: '', abandoned: '', waiting: '' };
-        }
-
-        const valuesLine = lines[headerIndex + 1];
-
-        if (!valuesLine) {
-          return { serviced: '', abandoned: '', waiting: '' };
-        }
-
-        const values = valuesLine.split('\t').filter(v => v !== '');
-
-        return {
-          serviced: values[1] || '',
-          abandoned: values[2] || '',
-          waiting: values[4] || ''
-        };
-      });
-
-      console.log(q.ext, data);
-
-      result.push({
+      results.push({
         ext: q.ext,
-        serviced: data.serviced,
-        abandoned: data.abandoned,
-        waiting: data.waiting
+        serviced,
+        abandoned,
+        waiting
       });
     }
 
+    // =========================
+    // 5️⃣ 回傳 JSON
+    // =========================
     await browser.close();
 
-    console.log('✅ 全部完成');
+    console.log('✅ 完成');
 
-    res.json(result);
+    res.json(results);
 
   } catch (err) {
-    console.error('❌ 錯誤:', err.message);
+    console.error(err);
     await browser.close();
-    res.send('錯誤: ' + err.message);
+    res.send('❌ 錯誤: ' + err.message);
   }
 });
 
-app.listen(3000, () => {
-  console.log('🚀 http://localhost:3000/run');
+// 🚀 Render 需要這個 PORT
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
 });
