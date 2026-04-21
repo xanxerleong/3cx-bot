@@ -14,6 +14,7 @@ app.get('/', (req, res) => {
   res.send('✅ 3CX bot is running');
 });
 
+// 🚀 啟動任務
 app.get('/run', async (req, res) => {
   res.send('🚀 任務已啟動');
 
@@ -21,42 +22,51 @@ app.get('/run', async (req, res) => {
     let browser;
 
     try {
-      const browserFetcher = puppeteer.createBrowserFetcher();
-      const revisionInfo = await browserFetcher.download(
-        puppeteer.browserRevision
-      );
+      console.log('🔥 開始抓資料');
 
       browser = await puppeteer.launch({
         headless: true,
-        executablePath: revisionInfo.executablePath,
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
+        executablePath: puppeteer.executablePath(), // ✅ 正確
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-gpu'
+        ]
       });
 
       const page = await browser.newPage();
 
       // 👉 登入
       await page.goto(BASE_URL, { waitUntil: 'networkidle2' });
+
       await page.waitForSelector('input');
 
       const inputs = await page.$$('input');
+
       await inputs[0].type(USERNAME);
       await inputs[1].type(PASSWORD);
+
       await page.keyboard.press('Enter');
 
       await new Promise(r => setTimeout(r, 5000));
 
-      // 👉 分機列表
+      console.log('✅ 登入成功');
+
+      // 👉 分機
       const queues = [
         { ext: '0300', id: 106 },
         { ext: '0301', id: 107 },
         { ext: '0302', id: 108 },
-        { ext: '0310', id: 109 }, // ⚠️ 確認 ID
-        { ext: '0700', id: 160 }  // ⚠️ 確認 ID
+        { ext: '0310', id: 109 },
+        { ext: '0700', id: 110 }
       ];
 
       let results = [];
 
       for (const q of queues) {
+
+        console.log('👉 抓 ' + q.ext);
 
         await page.goto(`${BASE_URL}/#/switchboard/queues/${q.id}`, {
           waitUntil: 'networkidle2'
@@ -85,17 +95,29 @@ app.get('/run', async (req, res) => {
         }
       }
 
-      latestResult = results;
+      latestResult = {
+        status: "完成",
+        data: results
+      };
+
+      console.log('✅ 全部完成');
 
       await browser.close();
 
     } catch (err) {
-      latestResult = { error: err.message };
+      console.error(err);
+
+      latestResult = {
+        status: "錯誤",
+        error: err.message
+      };
+
       if (browser) await browser.close();
     }
   })();
 });
 
+// 📊 取得結果
 app.get('/result', (req, res) => {
   if (!latestResult) {
     return res.json({ status: '尚未完成' });
@@ -104,5 +126,5 @@ app.get('/result', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`🚀 Server running`);
 });
