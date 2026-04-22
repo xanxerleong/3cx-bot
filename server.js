@@ -1,5 +1,5 @@
 const express = require('express');
-const puppeteer = require('puppeteer');
+const { chromium } = require('playwright');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -14,7 +14,6 @@ app.get('/', (req, res) => {
   res.send('✅ 3CX bot is running');
 });
 
-// 🚀 啟動任務
 app.get('/run', async (req, res) => {
   res.send('🚀 任務已啟動');
 
@@ -22,44 +21,37 @@ app.get('/run', async (req, res) => {
     let browser;
 
     try {
-      console.log('🔥 開始抓資料');
+      console.log('🔥 Playwright 啟動');
 
-      browser = await puppeteer.launch({
-        headless: true,
-        executablePath: puppeteer.executablePath(), // ✅ 正確
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-gpu'
-        ]
+      browser = await chromium.launch({
+        headless: true
       });
 
       const page = await browser.newPage();
 
       // 👉 登入
-      await page.goto(BASE_URL, { waitUntil: 'networkidle2' });
+      await page.goto(BASE_URL);
 
       await page.waitForSelector('input');
 
       const inputs = await page.$$('input');
 
-      await inputs[0].type(USERNAME);
-      await inputs[1].type(PASSWORD);
+      await inputs[0].fill(USERNAME);
+      await inputs[1].fill(PASSWORD);
 
       await page.keyboard.press('Enter');
 
-      await new Promise(r => setTimeout(r, 5000));
+      await page.waitForTimeout(5000);
 
       console.log('✅ 登入成功');
 
-      // 👉 分機
+      // 👉 分機（記得確認 ID）
       const queues = [
         { ext: '0300', id: 106 },
         { ext: '0301', id: 107 },
         { ext: '0302', id: 108 },
         { ext: '0310', id: 109 },
-        { ext: '0700', id: 160 }
+        { ext: '0700', id: 110 }
       ];
 
       let results = [];
@@ -68,11 +60,9 @@ app.get('/run', async (req, res) => {
 
         console.log('👉 抓 ' + q.ext);
 
-        await page.goto(`${BASE_URL}/#/switchboard/queues/${q.id}`, {
-          waitUntil: 'networkidle2'
-        });
+        await page.goto(`${BASE_URL}/#/switchboard/queues/${q.id}`);
 
-        await new Promise(r => setTimeout(r, 3000));
+        await page.waitForTimeout(3000);
 
         const text = await page.evaluate(() => document.body.innerText);
 
@@ -100,9 +90,9 @@ app.get('/run', async (req, res) => {
         data: results
       };
 
-      console.log('✅ 全部完成');
-
       await browser.close();
+
+      console.log('✅ 完成');
 
     } catch (err) {
       console.error(err);
@@ -117,7 +107,6 @@ app.get('/run', async (req, res) => {
   })();
 });
 
-// 📊 取得結果
 app.get('/result', (req, res) => {
   if (!latestResult) {
     return res.json({ status: '尚未完成' });
@@ -126,5 +115,5 @@ app.get('/result', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 Server running`);
+  console.log('🚀 Server running');
 });
