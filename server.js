@@ -1,5 +1,6 @@
 const express = require('express');
 const { chromium } = require('playwright');
+const { execSync } = require('child_process');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -9,11 +10,36 @@ const PASSWORD = 'Xanxer910822@';
 const BASE_URL = 'https://kkco-asiayo.3cx.com.tw:5271';
 
 let latestResult = null;
+let browserReady = false;
 
+/**
+ * 🧠 確保 Chromium 存在（Render 免費版關鍵）
+ */
+function ensureBrowser() {
+  if (browserReady) return;
+
+  console.log('📦 檢查 Chromium...');
+
+  try {
+    execSync('npx playwright install chromium', { stdio: 'inherit' });
+    browserReady = true;
+    console.log('✅ Chromium 安裝完成');
+  } catch (e) {
+    console.error('❌ Chromium 安裝失敗', e);
+    throw e;
+  }
+}
+
+/**
+ * 🏠 首頁
+ */
 app.get('/', (req, res) => {
   res.send('✅ 3CX bot is running');
 });
 
+/**
+ * 🚀 啟動任務（背景執行）
+ */
 app.get('/run', async (req, res) => {
   res.send('🚀 任務已啟動');
 
@@ -21,7 +47,10 @@ app.get('/run', async (req, res) => {
     let browser;
 
     try {
-      console.log('🔥 Playwright 啟動');
+      console.log('🔥 開始任務');
+
+      // 👉 關鍵：確保瀏覽器
+      ensureBrowser();
 
       browser = await chromium.launch({
         headless: true
@@ -31,7 +60,6 @@ app.get('/run', async (req, res) => {
 
       // 👉 登入
       await page.goto(BASE_URL);
-
       await page.waitForSelector('input');
 
       const inputs = await page.$$('input');
@@ -45,7 +73,7 @@ app.get('/run', async (req, res) => {
 
       console.log('✅ 登入成功');
 
-      // 👉 分機（記得確認 ID）
+      // 👉 分機設定（你要的）
       const queues = [
         { ext: '0300', id: 106 },
         { ext: '0301', id: 107 },
@@ -66,7 +94,9 @@ app.get('/run', async (req, res) => {
 
         const text = await page.evaluate(() => document.body.innerText);
 
-        const match = text.match(/\n(\d+)\s+(\d+)\s+(\d+)\s+\d+:\d+:\d+\s+(\d+:\d+:\d+)/);
+        const match = text.match(
+          /\n(\d+)\s+(\d+)\s+(\d+)\s+\d+:\d+:\d+\s+(\d+:\d+:\d+)/
+        );
 
         if (match) {
           results.push({
@@ -90,9 +120,9 @@ app.get('/run', async (req, res) => {
         data: results
       };
 
-      await browser.close();
+      console.log('✅ 全部完成');
 
-      console.log('✅ 完成');
+      await browser.close();
 
     } catch (err) {
       console.error(err);
@@ -107,6 +137,9 @@ app.get('/run', async (req, res) => {
   })();
 });
 
+/**
+ * 📊 取得結果
+ */
 app.get('/result', (req, res) => {
   if (!latestResult) {
     return res.json({ status: '尚未完成' });
@@ -114,6 +147,9 @@ app.get('/result', (req, res) => {
   res.json(latestResult);
 });
 
+/**
+ * 🚀 啟動 server
+ */
 app.listen(PORT, () => {
   console.log('🚀 Server running');
 });
